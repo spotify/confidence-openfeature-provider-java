@@ -42,13 +42,8 @@ The provider is instantiated using a client token that is configured in the Conf
 management API. After that all interaction with the feature flags happens using the OpenFeature client APIs. 
 
 ```java
-package com.spotify.confidence.openfeature;
-
 import com.spotify.confidence.ConfidenceFeatureProvider;
-import dev.openfeature.sdk.Client;
-import dev.openfeature.sdk.MutableContext;
-import dev.openfeature.sdk.OpenFeatureAPI;
-import dev.openfeature.sdk.Value;
+import dev.openfeature.sdk.*;
 import java.util.Map;
 
 public final class ResolveFlags {
@@ -69,3 +64,46 @@ public final class ResolveFlags {
   }
 }
 ```
+
+## Metrics emission (EXPERIMENTAL)
+
+Confidence offers APIs to collect metrics from your application in the form of `EVENTS`.
+
+The experimental `Confidence` interface allows to both:
+- Configure the OpenFeature Provider for flag resolves
+- Emit events
+
+Usage example:
+
+```java
+import com.spotify.confidence.ConfidenceValue;
+import dev.openfeature.sdk.FeatureProvider;
+
+public final class ResolveFlags {
+
+  public static final String CLIENT_TOKEN = "<>";
+
+  public static void main(String[] args) {
+    final Confidence confidence = Confidence.builder(CLIENT_TOKEN).build();
+    final FeatureProvider provider = new ConfidenceFeatureProvider(confidence);
+    // Flags are operated via the same OpenFeature Client APIs
+    OpenFeatureAPI.getInstance().setProvider(provider);
+
+    // Additionally, events can be emitted
+    confidence.send("my-event", ConfidenceValue.of("event-value"));
+  }
+}
+```
+
+The `send()` API supports:
+- Setting a custom event's payload with all the Confidence-supported types via the `ConfidenceValue` interfaces
+- Automatically including the OpenFeature's `Evaluation Context` detected at the time `send()` is called
+  - _Note: this only considers the global Evaluation Context set at the OpenFeatureAPI level_
+
+### Event Context
+It's possible to set custom `Event Context` data, that will be appended to each event. Usage:
+```java
+    final Confidence confidenceWithContext = confidence.withContext(ConfidenceValue.of("context-value"));
+    confidenceWithContext.send("my-event", ConfidenceValue.of("event-value"));
+```
+The "my-event" event in the example above will contain fields for "event-value", "context-value" and the Evaluation Context data previously set via `OpenFeatureAPI.getInstance().setEvaluationContext(...)`.
