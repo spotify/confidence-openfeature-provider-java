@@ -1,6 +1,5 @@
 package com.spotify.confidence;
 
-import static com.spotify.confidence.EventSenderTestUtils.getFlushPolicies;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.common.collect.ImmutableMap;
@@ -26,7 +25,8 @@ public class ConfidenceEventSenderIntegrationTest {
     final int batchSize = 6;
     final int numEvents = 14;
     final EventSenderEngine engine =
-        new EventSenderEngineImpl(getFlushPolicies(10000, batchSize), alwaysSucceedUploader, clock);
+        new EventSenderEngineImpl(
+            List.of(new BatchSizeFlushPolicy(batchSize)), alwaysSucceedUploader, clock, 500);
     final Confidence confidence = Confidence.create(engine, fakeFlagResolverClient);
     int size = 0;
     while (size++ < numEvents) {
@@ -55,11 +55,35 @@ public class ConfidenceEventSenderIntegrationTest {
     final FakeUploader alwaysSucceedUploader = new FakeUploader(List.of());
     final int batchSize = 6;
     final EventSenderEngine engine =
-        new EventSenderEngineImpl(getFlushPolicies(10000, batchSize), alwaysSucceedUploader, clock);
+        new EventSenderEngineImpl(
+            List.of(new BatchSizeFlushPolicy(batchSize)), alwaysSucceedUploader, clock, 500);
     final Confidence confidence = Confidence.create(engine, fakeFlagResolverClient);
 
     confidence.close(); // Should trigger the upload of an additional incomplete batch
     assertThat(alwaysSucceedUploader.uploadCalls.size()).isEqualTo(0);
+  }
+
+  @Test
+  public void testEngineUploadsTriggeredByFlushTimeout() throws IOException, InterruptedException {
+    final FakeUploader alwaysSucceedUploader = new FakeUploader(List.of());
+    final int batchSize = 6;
+    final EventSenderEngine engine =
+        new EventSenderEngineImpl(
+            List.of(new BatchSizeFlushPolicy(batchSize)), alwaysSucceedUploader, clock, 100);
+    final Confidence confidence = Confidence.create(engine, fakeFlagResolverClient);
+
+    // send only one event
+    confidence.send(
+        "navigate", ConfidenceValue.of(ImmutableMap.of("key", ConfidenceValue.of("size"))));
+
+    // wait for the flush timeout to trigger the upload
+    Thread.sleep(200);
+    // assert
+    assertThat(alwaysSucceedUploader.uploadCalls.size()).isEqualTo(1);
+    assertThat(alwaysSucceedUploader.uploadCalls.get(0).events().size()).isEqualTo(1);
+
+    // close
+    confidence.close();
   }
 
   @Test
@@ -70,7 +94,8 @@ public class ConfidenceEventSenderIntegrationTest {
     final List<Integer> failAtUploadWithIndex = List.of(2, 5);
     final FakeUploader fakeUploader = new FakeUploader(failAtUploadWithIndex);
     final EventSenderEngine engine =
-        new EventSenderEngineImpl(getFlushPolicies(10000, batchSize), fakeUploader, clock);
+        new EventSenderEngineImpl(
+            List.of(new BatchSizeFlushPolicy(batchSize)), fakeUploader, clock, 500);
     final Confidence confidence = Confidence.create(engine, fakeFlagResolverClient);
     int size = 0;
     while (size++ < numEvents) {
@@ -99,7 +124,8 @@ public class ConfidenceEventSenderIntegrationTest {
 
     final FakeUploader alwaysSucceedUploader = new FakeUploader();
     final EventSenderEngine engine =
-        new EventSenderEngineImpl(getFlushPolicies(10000, batchSize), alwaysSucceedUploader, clock);
+        new EventSenderEngineImpl(
+            List.of(new BatchSizeFlushPolicy(batchSize)), alwaysSucceedUploader, clock, 500);
     final Confidence confidence = Confidence.create(engine, fakeFlagResolverClient);
     final List<Future<Boolean>> futures = new ArrayList<>();
     final ExecutorService executorService = Executors.newFixedThreadPool(numberOfThreads);
